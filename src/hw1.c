@@ -50,13 +50,18 @@ unsigned int get_traffic_class(unsigned char packet[]) {
     return traffic_class;
 }
 
+int get_payload_length(unsigned char packet[]) {
+    int payload_length = get_packet_length(packet) - 16;
+    return payload_length;
+}
+
 int get_payload_value(unsigned char packet[], int start_index) {
     int value = (packet[start_index] << 24) | (packet[start_index + 1] << 16) | (packet[start_index + 2] << 8) | packet[start_index + 3];
     return value;
 }
 
 void print_payload(unsigned char packet[]) {
-    int payload_length = get_packet_length(packet) - 16; 
+    int payload_length = get_payload_length(packet);
     printf("Payload: ");
     for (int i = 0; i < payload_length; i += 4) {
         int payload_value = get_payload_value(packet, 16 + i);
@@ -66,6 +71,17 @@ void print_payload(unsigned char packet[]) {
         }
     }
     printf("\n");
+}
+
+int get_payload_sum(unsigned char packet[]) {
+    int payload_length = get_payload_length(packet);
+    int sum = 0;
+    for (int i = 0; i < payload_length; i += 4) {
+        int payload_value = get_payload_value(packet, 16 + i);
+        sum += abs(payload_value);
+    }
+
+    return sum;
 }
 
 // int get_payload(unsigned char packet[]) {
@@ -125,9 +141,13 @@ void print_packet_sf(unsigned char packet[])
 }
 
 unsigned int compute_checksum_sf(unsigned char packet[])
-{
-    (void)packet;
-    return -1;
+{   unsigned int sum = get_source_address(packet) + get_dest_addr(packet) + get_source_port(packet) + get_dest_port(packet) + get_fragment_offset(packet) +
+        get_packet_length(packet) + get_maximum_hop_count(packet) + get_compression_scheme(packet) + get_traffic_class(packet) + get_payload_sum(packet);
+    
+    unsigned int checksum = sum % 8388607;
+
+    return checksum;
+
 }
 
 unsigned int reconstruct_array_sf(unsigned char *packets[], unsigned int packets_len, int *array, unsigned int array_len) {
