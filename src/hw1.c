@@ -269,7 +269,7 @@ void set_header_fields(unsigned char *packet, unsigned int src_addr, unsigned in
     packet[7] = (src_port << 4) | (dest_port & 0xF);
     
     // frag offset + packet length
-    packet[8] = (fragment_offset >> 8) & 0xFF;
+    packet[8] = (fragment_offset >> 6) & 0xFF;
     packet[9] = (fragment_offset & 0x3F) << 2;
 
     packet[9] |= (packet_length >> 12) & 0x03;
