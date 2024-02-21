@@ -60,8 +60,8 @@ unsigned int get_traffic_class(unsigned char packet[]) {
 
 }
 
-int get_payload_length(unsigned char packet[]) {
-    int payload_length = get_packet_length(packet) - 16;
+unsigned int get_payload_length(unsigned char packet[]) {
+    unsigned int payload_length = get_packet_length(packet) - 16;
     return payload_length;
 
 }
@@ -73,10 +73,10 @@ int get_payload_value(unsigned char packet[], int start_index) {
 }
 
 void print_payload(unsigned char packet[]) {
-    int payload_length = get_payload_length(packet);
+    unsigned int payload_length = get_payload_length(packet);
     printf("Payload: ");
 
-    for (int i = 0; i < payload_length; i += 4) {
+    for (unsigned int i = 0; i < payload_length; i += 4) {
         int payload_value = get_payload_value(packet, 16 + i);
         printf("%d", payload_value);
 
@@ -88,17 +88,15 @@ void print_payload(unsigned char packet[]) {
 
 }
 
-int get_payload_sum(unsigned char packet[]) {
-    int payload_length = get_payload_length(packet);
-    int sum = 0;
+unsigned int get_payload_sum(unsigned char packet[]) {
+    unsigned int payload_length = get_payload_length(packet); 
+    unsigned int sum = 0;
 
-    for (int i = 0; i < payload_length; i += 4) {
-        int payload_value = get_payload_value(packet, 16 + i);
+    for (unsigned int i = 0; i < payload_length; i += 4) { 
+        int payload_value = get_payload_value(packet, 16 + i); 
         sum += abs(payload_value);
-
     }
     return sum;
-
 }
 
 // int get_payload(unsigned char packet[]) {
@@ -204,34 +202,37 @@ unsigned int packetize_array_sf(int *array, unsigned int array_len, unsigned cha
                           unsigned int src_port, unsigned int dest_port, unsigned int maximum_hop_count,
                           unsigned int compression_scheme, unsigned int traffic_class)
 {
-    unsigned int ints_per_packet = max_payload / sizeof(int);
-    unsigned int total_packets = (array_len + ints_per_packet - 1) / ints_per_packet;
+    unsigned int payload_size = max_payload / sizeof(int);
+    unsigned int total_packets = (array_len + payload_size - 1) / payload_size;
     unsigned int packets_generated = 0;
 
     for (unsigned int i = 0; i < total_packets && i < packets_len; i++) {
-        unsigned int current_payload_size;
+        unsigned int current_payload_size; // in bytes ***
 
+        // figure out current payload size
         if (i < total_packets - 1) {
-            current_payload_size = ints_per_packet * sizeof(int);
+            current_payload_size = payload_size * sizeof(int);
         } else {
-            unsigned int remaining_integers = array_len % ints_per_packet;
+            unsigned int remaining_integers = array_len % payload_size;
             if (remaining_integers == 0) {
-                current_payload_size = ints_per_packet * sizeof(int);
+                current_payload_size = payload_size * sizeof(int);
             } else {
                 current_payload_size = remaining_integers * sizeof(int);
             }
         }
-        if (current_payload_size == 0) current_payload_size = ints_per_packet * sizeof(int); 
-        unsigned int packet_size = 16 + current_payload_size; // 16 bytes header + payload
+        if (current_payload_size == 0) current_payload_size = payload_size * sizeof(int); 
+        
+        // allocate memoory
+        unsigned int packet_size = 16 + current_payload_size;
         packets[i] = (unsigned char *)malloc(packet_size);
 
         // header
-        set_header_fields(packets[i], src_addr, dest_addr, src_port, dest_port, i * ints_per_packet * sizeof(int), packet_size, maximum_hop_count, compression_scheme, traffic_class);
+        set_header_fields(packets[i], src_addr, dest_addr, src_port, dest_port, i * payload_size * sizeof(int), packet_size, maximum_hop_count, compression_scheme, traffic_class);
 
         // payload
         for (unsigned int j = 0; j < current_payload_size / sizeof(int); j++) {
             int payload_index = 16 + j * 4;
-            int value = array[i * ints_per_packet + j];
+            int value = array[i * payload_size + j];
             packets[i][payload_index] = (value >> 24) & 0xFF;
             packets[i][payload_index + 1] = (value >> 16) & 0xFF;
             packets[i][payload_index + 2] = (value >> 8) & 0xFF;
@@ -268,20 +269,30 @@ void set_header_fields(unsigned char *packet, unsigned int src_addr, unsigned in
     packet[7] = (src_port << 4) | (dest_port & 0xF);
     
     // frag offset + packet length
-    packet[8] = (fragment_offset >> 8) & 0x3F;
-    packet[9] = fragment_offset & 0xFF;
-    packet[9] |= (packet_length >> 6) & 0xC0;
-    packet[10] = packet_length & 0x3F;
+    packet[8] = (fragment_offset >> 8) & 0xFF;
+    packet[9] = (fragment_offset & 0x3F) << 2;
+
+    packet[9] |= (packet_length >> 12) & 0x03;
+    packet[10] = (packet_length >> 4) & 0xFF;
+    packet[11] = (packet_length & 0x0F) << 4;
     
-    // max hop count, comp scheme, traffic class
-    packet[11] = ((maximum_hop_count << 3) & 0xF8) | ((compression_scheme << 1) & 0x06) | ((traffic_class >> 5) & 0x01);
-    packet[12] = traffic_class & 0x1F;
+    // max hop count
+    packet[11] |= (maximum_hop_count >> 1) & 0x0F;
+    packet[12] = (maximum_hop_count & 0x01) << 7;
+
+    // comp scheme
+    packet[15] = compression_scheme << 6;
+    
+    // traffic class
+    packet[15] |= traffic_class & 0x3F;
+
+    // packet[11] = ((maximum_hop_count << 3) & 0xF8) | ((compression_scheme << 1) & 0x06) | ((traffic_class >> 5) & 0x01);
+    // packet[12] = traffic_class & 0x1F;
 
 }
 
 void set_checksum(unsigned char *packet, unsigned int checksum) {
-    packet[13] = (checksum >> 16) & 0x7F;
-    packet[14] = (checksum >> 8) & 0xFF; 
-    packet[15] = checksum & 0xFF;
-
+        packet[12] |= (checksum >> 16) & 0x7f;
+        packet[13] = (checksum >> 8) & 0xFF;
+        packet[14] = (checksum & 0xFF);
 }
